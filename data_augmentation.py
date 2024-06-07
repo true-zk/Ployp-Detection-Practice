@@ -12,10 +12,29 @@ from typing import List
 
 import numpy as np
 import cv2
-from pathlib import Path
 from tqdm import tqdm
 
 # Useful funcs
+
+def rm_strange_mask_CC(mask, threshold_ratio=0.03):
+    """
+    Remove the left-top connected components in mask
+    Because the dataset BUG: there are some strange white points in the left-top corner
+    """
+    threshold_h = mask.shape[0] * threshold_ratio
+    threshold_w = mask.shape[1] * threshold_ratio
+    threshold = mask.shape[0] * mask.shape[1] * threshold_ratio
+    
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
+
+    for i in range(1, num_labels):
+        # If the connected component is in the top left corner and its area is less than the threshold
+        if stats[i, cv2.CC_STAT_LEFT] < threshold_w and stats[i, cv2.CC_STAT_TOP] < threshold_h and stats[i, cv2.CC_STAT_AREA] < threshold:
+            # Set the pixels of this component to 0
+            mask[labels == i] = 0
+
+    return mask
+
 
 def read_img(file, color=cv2.IMREAD_COLOR):
     """
@@ -29,6 +48,8 @@ def read_img(file, color=cv2.IMREAD_COLOR):
         img: np.ndarray, image data
     """
     img = cv2.imread(file, color)
+    if color == cv2.IMREAD_GRAYSCALE:
+        img = rm_strange_mask_CC(img)
     return img  
 
 
@@ -51,7 +72,26 @@ def read_bbox(file) -> List[List]:
     return bboxes
 
 
-def save_data(data:tuple, path:tuple, binary=True):
+def read_bbox_txt(file) -> List[List]:
+    """
+    Read bounding boxes from a TXT file
+    
+    Args:
+        file: str, path of TXT file
+    
+    Returns:
+        bboxes: list, bounding boxes
+    """
+    bboxes = []
+    with open(file, "r") as f:
+        for line in f.readlines():
+            bbox = line.strip().split(" ")
+            bbox[1:] = [float(x) for x in bbox[1:]]
+            bboxes.append(bbox)
+    return bboxes
+
+
+def save_data(data:tuple, path:tuple, binary=True, anti_aliasing=True):
     """
     Save img, mask, bboxes to pathes
     
@@ -65,6 +105,12 @@ def save_data(data:tuple, path:tuple, binary=True):
     
     if binary:
         mask = (data[1] > 0).astype(np.uint8) * 255
+    else:
+        mask = data[1]
+        
+    if anti_aliasing:
+        mask = DataAugmentor.anti_aliasing(mask)
+        
     cv2.imwrite(path[0], data[0])
     cv2.imwrite(path[1], mask)
     with open(path[2], "w") as f:
@@ -127,6 +173,15 @@ class DataAugmentor(object):
         print("- gray_scale(): Converts the image to grayscale.")
         print("- cutout(ratio, fill_value): Randomly cuts out a rectangle from the image.")
         print("- random_scale(scale_ratio_range, crop_ratio): Randomly scales the image, mask, and bounding boxes.")
+    
+    @staticmethod
+    def anti_aliasing(mask):
+        """
+        Anti aliasing for mask image
+        """
+        smooth = cv2.GaussianBlur(mask, (7, 7), 0)
+        _, mask = cv2.threshold(smooth, 127, 255, cv2.THRESH_BINARY)
+        return mask
     
     # private methods
     def _bbox_coords(self):
@@ -191,7 +246,7 @@ class DataAugmentor(object):
             """
             BUG: there are very small ones, so we need to filter them by setting a threshold
             """
-            if stats[i, cv2.CC_STAT_AREA] < 20:
+            if stats[i, cv2.CC_STAT_AREA] < 50:
                 continue
             
             bianry_mask = np.where(labeled_mask == i, 1, 0) # bianry mask only contines pixes with value i
@@ -368,7 +423,40 @@ class DataAugmentor(object):
         
 # Main Function
 
-def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False):
+def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False, if_gray=False):
+    """
+    Main function for Dataset Build && Data Augmentation
+    
+    Dataset structure:
+        - dataset
+        - - images
+        - - masks
+        - - bbox, CSV bboxes files
+        - - train.txt, each line a train file name like xx.jpg
+        - - test.txt, each line a test file name like xx.jpg
+        
+    New Dataset structure:
+        - new_dataset
+        - - train
+        - - - images
+        - - - masks
+        - - - bbox, TXT bboxes files
+        - - val
+        - - - images
+        - - - masks
+        - - - bbox, TXT bboxes files
+        - - test
+        - - - images
+        - - - masks
+        - - - bbox, TXT bboxes files
+        
+    Args:
+        path: str, path of dataset
+        new_path: str, path of new dataset
+        resize: tuple, (width, height)
+        if_augment: bool, whether to augment data
+        if_gray: bool, whether use gray augmentation
+    """
     print("cwd: ", os.getcwd())
     clean(new_path)
     
@@ -394,6 +482,7 @@ def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False):
     test_index = os.path.join(path, "test.txt")
     path_check([train_index, test_index])
     
+    # build test set
     with open(test_index, "r") as f:
         bar = tqdm(f.readlines())
         for test_img in bar:
@@ -408,12 +497,14 @@ def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False):
                            os.path.join(test_path, "bbox", test_img.replace(".jpg", ".txt"))]
             save_data(data, save_pathes)
     
+    # build train and val sets
     with open(train_index, "r") as f:
         train_set = f.readlines()
         random.shuffle(train_set)
         val_set = train_set[:int(len(train_set)*0.1)]
         train_set = train_set[int(len(train_set)*0.1):]
         
+        # build val set
         bar = tqdm(val_set)
         for val_img in bar:
             val_img = val_img.strip()
@@ -427,6 +518,7 @@ def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False):
                            os.path.join(val_path, "bbox", val_img.replace(".jpg", ".txt"))]
             save_data(data, save_pathes)
         
+        # build train set
         bar = tqdm(train_set)
         for train_img in bar:
             train_img = train_img.strip()
@@ -437,7 +529,39 @@ def main(path, new_path="new_dataset", resize=(640, 640), if_augment=False):
             if if_augment:
                 # Augment data
                 data_augmentor = DataAugmentor(data)
-        
+                data_dict = {
+                    'rand_flip_': data_augmentor.flip(flip_code=-1),
+                    'rand_crop_': data_augmentor.random_crop(),
+                    'rand_rotate_': data_augmentor.random_rotate(100),
+                    'rand_bright_': data_augmentor.random_brightness(),
+                    'rand_linear_': data_augmentor.random_linear_trans(),
+                    'rand_cutout_': data_augmentor.cutout((0.4, 0.4), fill_value='mean'),
+                    'rand_scale_': data_augmentor.random_scale()
+                    }
+                for name, data_ in data_dict.items():
+                    if data_:
+                        save_pathes = [os.path.join(train_path, "images", name + train_img),
+                                       os.path.join(train_path, "masks", name + train_img),
+                                       os.path.join(train_path, "bbox", name + train_img.replace(".jpg", ".txt"))]
+                        resized = resize_data(data_, resize)
+                        save_data(resized, save_pathes)
+                if if_gray:
+                    random_gray = data_augmentor.gray_scale()
+                    random_gray[0] = cv2.cvtColor(random_gray[0], cv2.COLOR_GRAY2BGR)
+                    save_pathes = [os.path.join(train_path, "images", "gray_" + train_img),
+                                   os.path.join(train_path, "masks", "gray_" + train_img),
+                                   os.path.join(train_path, "bbox", "gray_" + train_img.replace(".jpg", ".txt"))]
+                    resized = resize_data(random_gray, resize)
+                    save_data(resized, save_pathes)
+            
+            data = resize_data(data, resize) # resize img, mask, bboxes
+            save_pathes = [os.path.join(train_path, "images", train_img),
+                           os.path.join(train_path, "masks", train_img),
+                           os.path.join(train_path, "bbox", train_img.replace(".jpg", ".txt"))]
+            save_data(data, save_pathes)
+    
+    print("=> Done!")
+
 
 # Test Functions
 
@@ -471,7 +595,7 @@ def blended_mask_bbox_img(img, mask, bboxes):
     return blended
 
 
-def see_data(path, name, resize=(640, 640)):
+def see_data(path, name, resize=(640, 640), if_csv=True):
     """
     Visualize image, mask and bboxes on a single image
     """
@@ -481,7 +605,11 @@ def see_data(path, name, resize=(640, 640)):
     
     data = (read_img(os.path.join(img_path, name), cv2.IMREAD_COLOR),       # read image
             read_img(os.path.join(mask_path, name), cv2.IMREAD_GRAYSCALE),  # read mask
-            read_bbox(os.path.join(bbox_path, name.replace(".jpg", ".csv")))) # read bboxes, bboxes=[(class, x1, y1, x2, y2),...]
+            read_bbox(os.path.join(bbox_path, name.replace(".jpg", ".csv"))) if if_csv 
+            else read_bbox_txt(os.path.join(bbox_path, name.replace(".jpg", ".txt")))) # read bboxes, bboxes=[(class, x1, y1, x2, y2),...]
+    
+    for i, b in enumerate(data[2]):
+        print(f"=> bbox{i}: ", b)
     
     # test resize img, mask and bboxes
     data = resize_data(data, resize)      
@@ -577,9 +705,15 @@ def see_augmentor(dataset_path, name):
     
                 
 if __name__ == "__main__" :
-    # main("mini_dataset", "new_mini_dataset")
+    # main("mini_dataset", "new_mini_dataset", if_augment=True)
     # print(read_bbox("mini_dataset/bbox/0.csv"))
-    # see_data("mini_dataset", "101.jpg")
-    see_augmentor("mini_dataset", "101.jpg")
+    # see_data("new_mini_dataset/train", "rand_scale_10.jpg", if_csv=False)
+    # see_augmentor("mini_dataset", "101.jpg")
+    
+    main("dataset", "new_dataset", if_augment=True)
+    # see_data("new_dataset/train", "rand_flip_348.jpg", if_csv=False)
+    # see_data("new_dataset/train", "rand_cutout_286.jpg", if_csv=False)
+    # see_data("new_dataset/train", "rand_crop_630.jpg", if_csv=False)
+    # see_data("new_dataset/train", "rand_crop_532.jpg", if_csv=False)
     
     
