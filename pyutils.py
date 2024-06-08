@@ -28,7 +28,6 @@ class Dotdict(dict):
             self[key] = value
 
 
-
 class HyperParam(Dotdict):
     def __init__(self, file):
         super().__init__()

@@ -2,3 +2,6 @@
 /new_mini_dataset
 /raw
 /new_dataset
+/__pycache__
+/models
+/logs

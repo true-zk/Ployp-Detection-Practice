@@ -1,0 +1,19 @@
+# hyperparameters
+lr: 0.001
+step_size: 20
+gamma: 0.1
+batch_size: 2
+epochs: 100
+# train config
+model_name: "resunetpp"
+resume: False
+resume_path: ""
+train_data: "new_dataset/train"
+test_data: "new_dataset/test"
+val_data: "new_dataset/val"
+# constants
+log_interval: 100
+val_interval: 2000
+device: "auto"
+ckpt_dir: "models"
+log_dir: "logs"

@@ -155,7 +155,7 @@ class Upsample(nn.Module):
     def __init__(self, scale=2, mode="nearest") -> None:
         super(Upsample, self).__init__()
         if mode == "nearest":
-            self.upsample = nn.Upsample(scale_factor=scale, mode="nearest", align_corners=True)
+            self.upsample = nn.Upsample(scale_factor=scale, mode="nearest")
         elif mode == "bilinear":
             self.upsample = nn.Upsample(scale_factor=scale, mode="bilinear", align_corners=True)
         else:
