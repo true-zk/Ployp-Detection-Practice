@@ -32,7 +32,46 @@ An example:
 ---
 ## Models
 
-Still working on it...
+ResUnet++, for details, see `model.py`, and modules in `modules.py`.
+
+---
+## File Structure
+```
+.
+├── config.yml  # model config
+├── data_augmentation.py    # data augmentation class & utils
+├── dataloader.py           # data set & data loader
+├── dataset                 # original dataset dir
+│   ├── bbox                    # .csv bbox
+│   ├── images                  
+│   ├── masks
+│   ├── test.txt
+│   └── train.txt
+├── logger.py               # tensorboardx utils
+├── metrics.py              # loss functions
+├── mini_dataset
+│   ├── bbox
+│   ├── images
+│   ├── masks
+│   ├── test.txt
+│   └── train.txt
+├── model.py                # model
+├── modules.py              # model modules
+├── pyutils.py              # Hyper parameter utils
+├── see_data                # visualization data augmentation
+│   ├── see_augmentor_101.jpg
+│   └── see_raw_101.jpg
+├── train.py                # train 
+└── yolov8                  # yolov8 scripts
+    ├── contours_detect_sample  # sample of my contours detect res
+    ├── dataset             # dataset dir
+    ├── dataset_utils.py    # trans original dataset to yolov8 format
+    ├── result.jpg          # a predict res
+    ├── runs                # yolov8 runs results, contains ckpts
+    ├── yolo8.ipynb         # object detection script
+    ├── yolo8_pretrained    # pretrained yolov8 models
+    └── yolo8_seg.ipynb     # segmentation script
+```
 
 ---
 ## Cites

@@ -1,7 +1,11 @@
-/dataset
+/dataset/*
 /new_mini_dataset
 /raw
 /new_dataset
 /__pycache__
 /models
 /logs
+
+/yolov8/dataset/*
+/yolov8/runs/*
+/yolov8/yolo8_pretrained/*
